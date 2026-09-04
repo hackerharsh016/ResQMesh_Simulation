@@ -1,11 +1,33 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSimulationStore } from './state/useSimulationStore';
 import { NetworkCanvas } from './components/simulation/NetworkCanvas';
 import { NodeType, TransportType, EmergencyBundle, Priority, EmergencyType, Severity, BundleState } from './types';
-import { Play, Pause, Radio, Zap, Power, Wifi, Activity, ShieldAlert, Cpu, Bluetooth, Globe, MessageSquare, Database, RotateCcw } from 'lucide-react';
+import { Play, Pause, Radio, Zap, Power, Wifi, Activity, ShieldAlert, Cpu, Bluetooth, Globe, MessageSquare, Database, RotateCcw, Minus, Square } from 'lucide-react';
 function App() {
-  const { nodes, bundles, selectedNodeId, isPlaying, togglePlay, updateNode, addBundle, resetSimulation } = useSimulationStore();
+  const { nodes, bundles, selectedNodeId, isPlaying, togglePlay, updateNode, addBundle, resetSimulation, setGlobalInfrastructure, logs, globalSpeedMultiplier } = useSimulationStore();
   const initialized = React.useRef(false);
+
+  const [terminalPos, setTerminalPos] = useState({ x: 16, y: 112 });
+  const [isDraggingTerminal, setIsDraggingTerminal] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [terminalMinimized, setTerminalMinimized] = useState(false);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    setIsDraggingTerminal(true);
+    setDragOffset({ x: e.clientX - terminalPos.x, y: e.clientY - terminalPos.y });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDraggingTerminal) {
+      setTerminalPos({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    setIsDraggingTerminal(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
 
   useEffect(() => {
     // Initial Scenario Setup
@@ -120,19 +142,38 @@ function App() {
           </div>
 
           {/* Floating Log Terminal */}
-          <div className="absolute top-28 left-4 w-80 h-64 backdrop-blur-md bg-slate-950/80 border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden pointer-events-auto">
-            <div className="bg-white/5 border-b border-white/10 px-3 py-2 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-emerald-400" />
-              <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">System Terminal</span>
+          <div 
+            style={{ left: terminalPos.x, top: terminalPos.y }}
+            className={`absolute w-80 backdrop-blur-md bg-slate-950/80 border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden pointer-events-auto transition-all duration-300 ${terminalMinimized ? 'h-[37px]' : 'h-64'} z-50`}
+          >
+            <div 
+              className="bg-white/5 hover:bg-white/10 border-b border-white/10 px-3 py-2 flex items-center justify-between cursor-move select-none"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+            >
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-emerald-400" />
+                <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase pointer-events-none">System Terminal</span>
+              </div>
+              <button 
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); setTerminalMinimized(!terminalMinimized); }}
+                className="text-slate-400 hover:text-white transition-colors p-0.5 z-50 relative"
+              >
+                {terminalMinimized ? <Square className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-1.5 flex flex-col-reverse custom-scrollbar">
-              {useSimulationStore((state) => state.logs).map((log) => (
-                <div key={log.id} className="text-[11px] font-mono leading-tight">
-                  <span className="text-slate-500">[{new Date(log.time).toISOString().substring(11, 23)}]</span>{' '}
-                  <span className={log.msg.includes('SOS') ? 'text-rose-400' : 'text-cyan-400'}>{log.msg}</span>
-                </div>
-              ))}
-            </div>
+            {!terminalMinimized && (
+              <div className="flex-1 overflow-y-auto p-3 space-y-1.5 flex flex-col-reverse custom-scrollbar">
+                {logs.map((log) => (
+                  <div key={log.id} className="text-[11px] font-mono leading-tight">
+                    <span className="text-slate-500">[{new Date(log.time).toISOString().substring(11, 23)}]</span>{' '}
+                    <span className={log.msg.includes('SOS') ? 'text-rose-400' : 'text-cyan-400'}>{log.msg}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         
@@ -145,15 +186,34 @@ function App() {
               <input 
                 type="range" 
                 min="0" max="5" step="0.1" 
-                value={useSimulationStore((state) => state.globalSpeedMultiplier)}
+                value={globalSpeedMultiplier}
                 onChange={(e) => useSimulationStore.getState().setGlobalSpeedMultiplier(parseFloat(e.target.value))}
                 className="w-full accent-cyan-500"
               />
               <div className="flex justify-between text-xs text-slate-400 font-mono">
                 <span>0x</span>
-                <span>{useSimulationStore((state) => state.globalSpeedMultiplier).toFixed(1)}x</span>
+                <span>{globalSpeedMultiplier.toFixed(1)}x</span>
                 <span>5x</span>
               </div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <h2 className="text-xs font-bold tracking-widest text-slate-500 uppercase">Global Infrastructure</h2>
+            <div className="flex flex-col gap-2">
+              <button 
+                onClick={() => setGlobalInfrastructure('WAN', !nodes.every(n => n.hasInternet))}
+                className={`w-full py-2.5 rounded-lg font-bold text-xs tracking-wider transition-all flex items-center justify-center gap-2 ${nodes.length > 0 && nodes.every(n => n.hasInternet) ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+              >
+                <Globe className="w-4 h-4" />
+                GLOBAL WAN UPLINK
+              </button>
+              <button 
+                onClick={() => setGlobalInfrastructure('SMS', !nodes.every(n => n.transports.includes(TransportType.SMS)))}
+                className={`w-full py-2.5 rounded-lg font-bold text-xs tracking-wider transition-all flex items-center justify-center gap-2 ${nodes.length > 0 && nodes.every(n => n.transports.includes(TransportType.SMS)) ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                GLOBAL CELLULAR (SMS)
+              </button>
             </div>
           </div>
 

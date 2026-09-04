@@ -22,6 +22,7 @@ interface SimulationState {
   togglePlay: () => void;
   setSelectedNode: (id: string | null) => void;
   setGlobalSpeedMultiplier: (speed: number) => void;
+  setGlobalInfrastructure: (type: 'SMS' | 'WAN', enabled: boolean) => void;
   resetSimulation: () => void;
   
   // Simulation Loop Updates
@@ -85,6 +86,22 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     setSelectedNode: (id) => set({ selectedNodeId: id }),
     
     setGlobalSpeedMultiplier: (speed) => set({ globalSpeedMultiplier: speed }),
+
+    setGlobalInfrastructure: (type, enabled) => set((state) => {
+      const updatedNodes = state.nodes.map(n => {
+        if (type === 'WAN') {
+          return { ...n, hasInternet: enabled };
+        } else if (type === 'SMS') {
+          const hasSMS = n.transports.includes(TransportType.SMS);
+          let newTransports = [...n.transports];
+          if (enabled && !hasSMS) newTransports.push(TransportType.SMS);
+          if (!enabled && hasSMS) newTransports = newTransports.filter(t => t !== TransportType.SMS);
+          return { ...n, transports: newTransports };
+        }
+        return n;
+      });
+      return { nodes: updatedNodes };
+    }),
 
     resetSimulation: () => {
       const createNode = (id: string, x: number, y: number, isStatic = false, hasInternet = false, isAuthority = false): SimulatedNode => ({
