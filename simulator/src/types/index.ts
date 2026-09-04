@@ -99,8 +99,15 @@ export interface SimulatedNode {
   isActive: boolean;
   bundleStore: string[];
   deliveryHistory: DeliveryRecord[];
-  contactHistory: ContactRecord[];
+  contactHistory: { nodeId: string; timestamp: number }[];
   metrics: NodeMetrics;
+  lastActivity?: number;
+}
+
+export interface LogEntry {
+  id: string;
+  time: number;
+  msg: string;
 }
 
 export enum EmergencyType {

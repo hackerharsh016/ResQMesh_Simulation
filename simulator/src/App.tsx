@@ -1,38 +1,40 @@
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useSimulationStore } from './state/useSimulationStore';
 import { NetworkCanvas } from './components/simulation/NetworkCanvas';
 import { NodeType, TransportType, SimulatedNode, EmergencyBundle, Priority, EmergencyType, Severity, BundleState } from './types';
-import { Play, Pause, Radio, Zap, Power, Wifi, WifiOff, Activity, ShieldAlert, Cpu } from 'lucide-react';
-
+import { Play, Pause, Radio, Zap, Power, Wifi, Activity, ShieldAlert, Cpu, Bluetooth, Globe, MessageSquare } from 'lucide-react';
 function App() {
   const { nodes, bundles, selectedNodeId, isPlaying, togglePlay, addNode, updateNode, addBundle } = useSimulationStore();
+  const initialized = React.useRef(false);
 
   useEffect(() => {
     // Initial Scenario Setup
-    if (nodes.length === 0) {
-      const createNode = (id: string, type: NodeType, x: number, y: number, isStatic = false, isGateway = false): SimulatedNode => ({
-        id, type, position: { x, y }, 
+    if (nodes.length === 0 && !initialized.current) {
+      initialized.current = true;
+      const createNode = (id: string, x: number, y: number, isStatic = false, hasInternet = false, isAuthority = false): SimulatedNode => ({
+        id, type: NodeType.RELAY, position: { x, y }, 
         velocity: isStatic ? { x: 0, y: 0 } : { x: (Math.random() - 0.5) * 50, y: (Math.random() - 0.5) * 50 },
         battery: 100, communicationRange: 150,
         transports: [TransportType.BLE, TransportType.WIFI_DIRECT],
-        hasInternet: isGateway, isGateway, isAuthority: type === NodeType.AUTHORITY,
+        hasInternet, isGateway: hasInternet, isAuthority,
         isActive: true, bundleStore: [], deliveryHistory: [], contactHistory: [],
         metrics: { bundlesCreated: 0, bundlesRelayed: 0, bundlesDelivered: 0, bundlesDropped: 0, totalBytesTransferred: 0, energyConsumed: 0 }
       });
 
-      addNode(createNode('V1', NodeType.VICTIM, 150, 300));
       for(let i=1; i<=8; i++) {
-        addNode(createNode(`R${i}`, NodeType.RELAY, 300 + Math.random()*400, 100 + Math.random()*500));
+        addNode(createNode(`N${i}`, 150 + Math.random()*400, 100 + Math.random()*500));
       }
-      addNode(createNode('G1', NodeType.GATEWAY, 850, 300, true, true));
-      addNode(createNode('A1', NodeType.AUTHORITY, 1050, 300, true, false));
+      // Give one node internet (becomes Gateway dynamically)
+      addNode(createNode('G1', 850, 300, true, true, false));
+      // One Authority
+      addNode(createNode('A1', 1050, 300, true, true, true));
     }
   }, [nodes.length, addNode]);
 
-  const generateSOS = () => {
-    const victim = nodes.find(n => n.type === NodeType.VICTIM && n.isActive);
+  const generateSOS = (targetId: string) => {
+    const victim = nodes.find(n => n.id === targetId && n.isActive);
     if (!victim) {
-      alert("No active victim node found!");
+      alert("Selected node is inactive or missing!");
       return;
     }
 
@@ -120,21 +122,26 @@ function App() {
               </div>
             </div>
           </div>
+
+          {/* Floating Log Terminal */}
+          <div className="absolute top-28 left-4 w-80 h-64 backdrop-blur-md bg-slate-950/80 border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden pointer-events-auto">
+            <div className="bg-white/5 border-b border-white/10 px-3 py-2 flex items-center gap-2">
+              <Activity className="w-4 h-4 text-emerald-400" />
+              <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">System Terminal</span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-1.5 flex flex-col-reverse">
+              {useSimulationStore((state) => state.logs).map((log) => (
+                <div key={log.id} className="text-[11px] font-mono leading-tight">
+                  <span className="text-slate-500">[{new Date(log.time).toISOString().substring(11, 23)}]</span>{' '}
+                  <span className={log.msg.includes('SOS') ? 'text-rose-400' : 'text-cyan-400'}>{log.msg}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
         
         {/* Sidebar Controls */}
         <aside className="w-80 backdrop-blur-xl bg-slate-900/40 border border-white/10 rounded-2xl p-5 flex flex-col gap-6 overflow-y-auto shadow-2xl relative">
-          
-          <div className="relative">
-            <div className="absolute -inset-1 bg-gradient-to-r from-rose-500 to-orange-500 rounded-xl blur opacity-25"></div>
-            <button 
-              onClick={generateSOS}
-              className="relative w-full bg-slate-900 hover:bg-slate-800 border border-rose-500/50 text-rose-400 font-bold py-3 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 group"
-            >
-              <ShieldAlert className="w-5 h-5 group-hover:scale-110 transition-transform" />
-              EMIT SOS BEACON
-            </button>
-          </div>
 
           <div className="space-y-4">
             <h2 className="text-xs font-bold tracking-widest text-slate-500 uppercase">Global Speed Control</h2>
@@ -177,7 +184,6 @@ function App() {
             if (!node) return null;
             
             const roleName = NodeType[node.type];
-            const hasNetwork = node.transports.length > 0;
 
             return (
               <div className="mt-2 flex-1 flex flex-col">
@@ -223,22 +229,74 @@ function App() {
                   
                   <hr className="border-white/5" />
                   
+                  {/* Network Interfaces */}
+                  <div>
+                    <h3 className="text-[10px] font-bold tracking-widest text-slate-500 uppercase mb-2">Network Interfaces</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button 
+                        onClick={() => {
+                          const has = node.transports.includes(TransportType.BLE);
+                          updateNode(node.id, { 
+                            transports: has ? node.transports.filter(t => t !== TransportType.BLE) : [...node.transports, TransportType.BLE] 
+                          });
+                        }}
+                        className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-semibold transition-all ${node.transports.includes(TransportType.BLE) ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'bg-slate-900/50 border-white/5 text-slate-500 hover:text-slate-400'}`}
+                      >
+                        <Bluetooth className="w-3.5 h-3.5" /> BLE
+                      </button>
+
+                      <button 
+                        onClick={() => {
+                          const has = node.transports.includes(TransportType.WIFI_DIRECT);
+                          updateNode(node.id, { 
+                            transports: has ? node.transports.filter(t => t !== TransportType.WIFI_DIRECT) : [...node.transports, TransportType.WIFI_DIRECT] 
+                          });
+                        }}
+                        className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-semibold transition-all ${node.transports.includes(TransportType.WIFI_DIRECT) ? 'bg-blue-500/20 border-blue-500/50 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.2)]' : 'bg-slate-900/50 border-white/5 text-slate-500 hover:text-slate-400'}`}
+                      >
+                        <Wifi className="w-3.5 h-3.5" /> Wi-Fi
+                      </button>
+
+                      <button 
+                        onClick={() => {
+                          const has = node.transports.includes(TransportType.SMS);
+                          updateNode(node.id, { 
+                            transports: has ? node.transports.filter(t => t !== TransportType.SMS) : [...node.transports, TransportType.SMS] 
+                          });
+                        }}
+                        className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-semibold transition-all ${node.transports.includes(TransportType.SMS) ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-slate-900/50 border-white/5 text-slate-500 hover:text-slate-400'}`}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" /> SMS
+                      </button>
+
+                      <button 
+                        onClick={() => updateNode(node.id, { hasInternet: !node.hasInternet })}
+                        className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-semibold transition-all ${node.hasInternet ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)]' : 'bg-slate-900/50 border-white/5 text-slate-500 hover:text-slate-400'}`}
+                      >
+                        <Globe className="w-3.5 h-3.5" /> WAN
+                      </button>
+                    </div>
+                  </div>
+
+                  <hr className="border-white/5" />
+                  
                   {/* Actions */}
-                  <div className="pt-2 flex flex-col gap-3">
+                  <div className="pt-1 flex flex-col gap-3">
+                    <button 
+                      onClick={() => generateSOS(node.id)}
+                      disabled={!node.isActive}
+                      className={`w-full py-2.5 rounded-lg font-bold text-xs tracking-wider transition-all flex items-center justify-center gap-2 ${node.isActive ? 'bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 border border-rose-500/50' : 'bg-slate-800 text-slate-600 border border-slate-700 cursor-not-allowed'}`}
+                    >
+                      <ShieldAlert className="w-4 h-4" />
+                      EMIT SOS BEACON
+                    </button>
+
                     <button 
                       onClick={() => updateNode(node.id, { isActive: !node.isActive })}
-                      className={`w-full py-2.5 rounded-lg font-bold text-xs tracking-wider transition-all flex items-center justify-center gap-2 ${node.isActive ? 'bg-slate-800 hover:bg-slate-700 text-rose-400 border border-rose-500/30' : 'bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/50'}`}
+                      className={`w-full py-2.5 rounded-lg font-bold text-xs tracking-wider transition-all flex items-center justify-center gap-2 ${node.isActive ? 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-500/30' : 'bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/50'}`}
                     >
                       <Power className="w-4 h-4" />
                       {node.isActive ? 'TERMINATE NODE' : 'BOOT SEQUENCE'}
-                    </button>
-                    
-                    <button 
-                      onClick={() => updateNode(node.id, { transports: hasNetwork ? [] : [TransportType.BLE, TransportType.WIFI_DIRECT] })}
-                      className={`w-full py-2.5 rounded-lg font-bold text-xs tracking-wider transition-all flex items-center justify-center gap-2 ${hasNetwork ? 'bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30' : 'bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/50'}`}
-                    >
-                      {hasNetwork ? <WifiOff className="w-4 h-4" /> : <Wifi className="w-4 h-4" />}
-                      {hasNetwork ? 'JAM SIGNAL' : 'RESTORE COMMS'}
                     </button>
                   </div>
 

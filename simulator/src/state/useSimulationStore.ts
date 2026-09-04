@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { SimulatedNode, EmergencyBundle } from '../types';
+import { SimulatedNode, EmergencyBundle, NodeType, TransportType, LogEntry } from '../types';
 import { SimulationEngine } from '../simulation/engine/SimulationEngine';
 import { runRoutingCycle } from '../protocol/dtn/routing';
 
@@ -7,6 +7,7 @@ interface SimulationState {
   engine: SimulationEngine;
   nodes: SimulatedNode[];
   bundles: Record<string, EmergencyBundle>;
+  logs: LogEntry[];
   time: number;
   isPlaying: boolean;
   selectedNodeId: string | null;
@@ -55,6 +56,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     selectedNodeId: null,
     globalSpeedMultiplier: 1.0,
 
+    // ...
+    logs: [],
+    
     addNode: (node) => set((state) => ({ nodes: [...state.nodes, node] })),
     
     updateNode: (id, updates) => set((state) => ({
@@ -66,7 +70,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     })),
 
     addBundle: (bundle) => set((state) => ({
-      bundles: { ...state.bundles, [bundle.bundleId]: bundle }
+      bundles: { ...state.bundles, [bundle.bundleId]: bundle },
+      logs: [{ id: Date.now().toString(), time: Date.now(), msg: `[SOS] Bundle ${bundle.bundleId.slice(-4)} generated at ${bundle.originNodeId}` }, ...state.logs].slice(0, 50)
     })),
 
     updateBundle: (id, updates) => set((state) => ({
@@ -90,13 +95,29 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
     tick: (deltaMs) => {
       set((state) => {
-        // 1. Update positions based on velocity
+        // 1. Update positions, dynamic roles, and bounds
         const updatedNodes = state.nodes.map(node => {
-          if (node.velocity.x === 0 && node.velocity.y === 0) return node;
+          let updated = { ...node };
 
-          let newX = node.position.x + (node.velocity.x * (deltaMs / 1000) * state.globalSpeedMultiplier);
-          let newY = node.position.y + (node.velocity.y * (deltaMs / 1000) * state.globalSpeedMultiplier);
-          let { x: vx, y: vy } = node.velocity;
+          // Dynamic Activity: If BLE is disabled, node is inactive
+          updated.isActive = updated.transports.includes(TransportType.BLE);
+
+          // Dynamic Role Assignment
+          if (updated.isAuthority) {
+            updated.type = NodeType.AUTHORITY;
+          } else if (updated.hasInternet) {
+            updated.type = NodeType.GATEWAY;
+          } else {
+            // Check if it originated any SOS
+            const originatedSOS = Object.values(state.bundles).some(b => b.originNodeId === updated.id);
+            updated.type = originatedSOS ? NodeType.VICTIM : NodeType.RELAY;
+          }
+
+          if (updated.velocity.x === 0 && updated.velocity.y === 0) return updated;
+
+          let newX = updated.position.x + (updated.velocity.x * (deltaMs / 1000) * state.globalSpeedMultiplier);
+          let newY = updated.position.y + (updated.velocity.y * (deltaMs / 1000) * state.globalSpeedMultiplier);
+          let { x: vx, y: vy } = updated.velocity;
 
           if (newX < 50 || newX > 1150) {
             vx = -vx;
@@ -108,7 +129,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           }
 
           return {
-            ...node,
+            ...updated,
             position: { x: newX, y: newY },
             velocity: { x: vx, y: vy }
           };
@@ -118,21 +139,27 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
         // 2. AERS Routing Decision Cycle
         let finalNodes = [...updatedNodes];
+        let newLogs = [...state.logs];
         
         // Execute routing cycle
         const { transfers } = runRoutingCycle(finalNodes, state.bundles);
         
         // Apply transfers instantly for simulation UI simplicity right now
-        // A real discrete event engine would schedule a transfer completion event
         if (transfers.length > 0) {
           transfers.forEach(transfer => {
+            newLogs.unshift({
+              id: Math.random().toString(),
+              time: Date.now(),
+              msg: `[AERS] Transferred ${transfer.bundleId.slice(-4)} from ${transfer.from} to ${transfer.to}`
+            });
+
             finalNodes = finalNodes.map(n => {
               if (n.id === transfer.to) {
-                return { ...n, bundleStore: [...n.bundleStore, transfer.bundleId] };
+                return { ...n, bundleStore: [...n.bundleStore, transfer.bundleId], lastActivity: Date.now() };
               }
-              // DTN Store-Carry-Forward keeps the bundle in the sender until TTL expires or it's known delivered, 
-              // but to avoid immediate re-evaluations we might track whom we sent it to.
-              // For visualization, we keep it in the store to show propagation.
+              if (n.id === transfer.from) {
+                return { ...n, lastActivity: Date.now() };
+              }
               return n;
             });
           });
@@ -140,7 +167,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
         return {
           nodes: finalNodes,
-          time: newTime
+          time: newTime,
+          logs: newLogs.slice(0, 50)
         };
       });
     }

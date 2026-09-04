@@ -80,7 +80,14 @@ export const NetworkCanvas: React.FC = () => {
       }
       
       // Glow effect
-      if (node.isActive && node.transports.length > 0) {
+      const now = Date.now();
+      const recentlyActive = node.lastActivity && (now - node.lastActivity < 500);
+
+      if (recentlyActive) {
+        ctx.shadowBlur = 30;
+        ctx.shadowColor = '#ffffff'; // Bright white flash
+        ctx.fillStyle = '#ffffff'; // Pulse white
+      } else if (node.isActive && node.transports.length > 0) {
         ctx.shadowBlur = 15;
         ctx.shadowColor = glowColor;
       } else {
