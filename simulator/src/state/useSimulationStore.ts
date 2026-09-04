@@ -174,7 +174,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         // Execute routing cycle
         const { transfers } = runRoutingCycle(finalNodes, state.bundles);
         
-        // Apply transfers instantly for simulation UI simplicity right now
+        // Apply standard mesh transfers instantly for simulation UI simplicity
         if (transfers.length > 0) {
           transfers.forEach(transfer => {
             newLogs.unshift({
@@ -193,6 +193,45 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
               return n;
             });
           });
+        }
+
+        // 3. Backhaul Egress Check (WAN / SMS Shortcut)
+        const authorityNode = finalNodes.find(n => n.isAuthority);
+        if (authorityNode) {
+          let authorityUpdated = false;
+          // Need to clone authority's bundle store if we are modifying it
+          const authorityBundles = [...authorityNode.bundleStore];
+          
+          finalNodes = finalNodes.map(node => {
+            if (!node.isActive || node.id === authorityNode.id) return node;
+            
+            const hasBackhaul = node.hasInternet || node.transports.includes(TransportType.SMS);
+            if (hasBackhaul && node.bundleStore.length > 0) {
+              const unsentBundles = node.bundleStore.filter(bId => !authorityBundles.includes(bId));
+              
+              if (unsentBundles.length > 0) {
+                unsentBundles.forEach(bId => {
+                   authorityBundles.push(bId);
+                   authorityUpdated = true;
+                   
+                   newLogs.unshift({
+                     id: Math.random().toString(),
+                     time: Date.now(),
+                     msg: `[BACKHAUL] ${node.hasInternet ? 'WAN' : 'SMS'} uplink: ${bId.slice(-4)} from ${node.id} to Authority`
+                   });
+                });
+                return { ...node, lastActivity: Date.now() };
+              }
+            }
+            return node;
+          });
+
+          if (authorityUpdated) {
+             const authIndex = finalNodes.findIndex(n => n.id === authorityNode.id);
+             if (authIndex !== -1) {
+                 finalNodes[authIndex] = { ...finalNodes[authIndex], bundleStore: authorityBundles, lastActivity: Date.now() };
+             }
+          }
         }
 
         return {
