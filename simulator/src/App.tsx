@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useSimulationStore } from './state/useSimulationStore';
 import { NetworkCanvas } from './components/simulation/NetworkCanvas';
 import { NodeType, TransportType, SimulatedNode, EmergencyBundle, Priority, EmergencyType, Severity, BundleState } from './types';
-import { Play, Pause, Radio, Zap, Power, Wifi, WifiOff, Activity, ShieldAlert, Cpu, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, CircleStop } from 'lucide-react';
+import { Play, Pause, Radio, Zap, Power, Wifi, WifiOff, Activity, ShieldAlert, Cpu } from 'lucide-react';
 
 function App() {
   const { nodes, bundles, selectedNodeId, isPlaying, togglePlay, addNode, updateNode, addBundle } = useSimulationStore();
@@ -134,6 +134,24 @@ function App() {
               <ShieldAlert className="w-5 h-5 group-hover:scale-110 transition-transform" />
               EMIT SOS BEACON
             </button>
+          </div>
+
+          <div className="space-y-4">
+            <h2 className="text-xs font-bold tracking-widest text-slate-500 uppercase">Global Speed Control</h2>
+            <div className="flex flex-col gap-2">
+              <input 
+                type="range" 
+                min="0" max="5" step="0.1" 
+                value={useSimulationStore((state) => state.globalSpeedMultiplier)}
+                onChange={(e) => useSimulationStore.getState().setGlobalSpeedMultiplier(parseFloat(e.target.value))}
+                className="w-full accent-cyan-500"
+              />
+              <div className="flex justify-between text-xs text-slate-400 font-mono">
+                <span>0x</span>
+                <span>{useSimulationStore((state) => state.globalSpeedMultiplier).toFixed(1)}x</span>
+                <span>5x</span>
+              </div>
+            </div>
           </div>
 
           <div className="space-y-4">

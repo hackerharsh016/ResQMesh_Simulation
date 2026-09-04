@@ -129,33 +129,70 @@ export const NetworkCanvas: React.FC = () => {
     }
   }, [nodes, selectedNodeId]);
 
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+  // Dragging state
+  const [draggedNodeId, setDraggedNodeId] = React.useState<string | null>(null);
+  const updateNode = useSimulationStore((state) => state.updateNode);
 
+  const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    
+    // Calculate scaling if canvas CSS size differs from its intrinsic size (though here they match w/h)
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x, y } = getCanvasCoords(e);
     let foundId: string | null = null;
+    
     for (const node of nodes) {
       const dx = node.position.x - x;
       const dy = node.position.y - y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
-      // 15px radius for click detection
       if (dist <= 15) {
         foundId = node.id;
         break;
       }
     }
     
-    setSelectedNode(foundId);
+    if (foundId) {
+      setSelectedNode(foundId);
+      setDraggedNodeId(foundId);
+    } else {
+      setSelectedNode(null);
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!draggedNodeId) return;
+    
+    const { x, y } = getCanvasCoords(e);
+    // Update node position instantly and halt its velocity so it doesn't fight the drag
+    updateNode(draggedNodeId, { position: { x, y }, velocity: { x: 0, y: 0 } });
+  };
+
+  const handleMouseUp = () => {
+    setDraggedNodeId(null);
   };
 
   return (
     <div className="w-full h-full rounded-2xl overflow-hidden border border-white/10 bg-slate-900/30 backdrop-blur-sm shadow-2xl relative">
-      <canvas ref={canvasRef} onClick={handleCanvasClick} className="w-full h-full block cursor-pointer" />
+      <canvas 
+        ref={canvasRef} 
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        className="w-full h-full block cursor-pointer" 
+      />
     </div>
   );
 };

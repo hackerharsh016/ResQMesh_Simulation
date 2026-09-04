@@ -10,6 +10,7 @@ interface SimulationState {
   time: number;
   isPlaying: boolean;
   selectedNodeId: string | null;
+  globalSpeedMultiplier: number;
   
   // Actions
   addNode: (node: SimulatedNode) => void;
@@ -19,6 +20,7 @@ interface SimulationState {
   updateBundle: (id: string, updates: Partial<EmergencyBundle>) => void;
   togglePlay: () => void;
   setSelectedNode: (id: string | null) => void;
+  setGlobalSpeedMultiplier: (speed: number) => void;
   
   // Simulation Loop Updates
   tick: (deltaMs: number) => void;
@@ -51,6 +53,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     time: 0,
     isPlaying: false,
     selectedNodeId: null,
+    globalSpeedMultiplier: 1.0,
 
     addNode: (node) => set((state) => ({ nodes: [...state.nodes, node] })),
     
@@ -74,6 +77,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     })),
 
     setSelectedNode: (id) => set({ selectedNodeId: id }),
+    
+    setGlobalSpeedMultiplier: (speed) => set({ globalSpeedMultiplier: speed }),
 
     togglePlay: () => {
       const { isPlaying } = get();
@@ -89,8 +94,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         const updatedNodes = state.nodes.map(node => {
           if (node.velocity.x === 0 && node.velocity.y === 0) return node;
 
-          let newX = node.position.x + (node.velocity.x * (deltaMs / 1000));
-          let newY = node.position.y + (node.velocity.y * (deltaMs / 1000));
+          let newX = node.position.x + (node.velocity.x * (deltaMs / 1000) * state.globalSpeedMultiplier);
+          let newY = node.position.y + (node.velocity.y * (deltaMs / 1000) * state.globalSpeedMultiplier);
           let { x: vx, y: vy } = node.velocity;
 
           if (newX < 50 || newX > 1150) {
