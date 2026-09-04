@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useSimulationStore } from './state/useSimulationStore';
 import { NetworkCanvas } from './components/simulation/NetworkCanvas';
 import { NodeType, TransportType, EmergencyBundle, Priority, EmergencyType, Severity, BundleState } from './types';
-import { Play, Pause, Radio, Zap, Power, Wifi, Activity, ShieldAlert, Cpu, Bluetooth, Globe, MessageSquare, Database, RotateCcw, Minus, Square } from 'lucide-react';
+import { Play, Pause, Radio, Zap, Power, Wifi, Activity, ShieldAlert, Cpu, Bluetooth, Globe, MessageSquare, Database, RotateCcw, Minus, Square, FlaskConical, X } from 'lucide-react';
 function App() {
   const { nodes, bundles, selectedNodeId, isPlaying, togglePlay, updateNode, addBundle, resetSimulation, setGlobalInfrastructure, logs, globalSpeedMultiplier } = useSimulationStore();
   const initialized = React.useRef(false);
@@ -11,6 +11,7 @@ function App() {
   const [isDraggingTerminal, setIsDraggingTerminal] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [terminalMinimized, setTerminalMinimized] = useState(false);
+  const [showScenarios, setShowScenarios] = useState(false);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     setIsDraggingTerminal(true);
@@ -85,18 +86,28 @@ function App() {
     <div className="flex flex-col h-screen text-slate-200">
       
       {/* Header */}
-      <header className="backdrop-blur-md bg-slate-900/60 border-b border-white/10 px-6 py-4 flex items-center justify-between z-10 shadow-lg">
+      <header className="p-5 flex items-center justify-between border-b border-white/10 bg-slate-900/50 backdrop-blur-md relative z-10">
         <div className="flex items-center gap-3">
-          <div className="bg-cyan-500/20 p-2 rounded-lg border border-cyan-500/30">
-            <Radio className="text-cyan-400 w-6 h-6" />
+          <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+            <Radio className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-500">ResQMesh Engine</h1>
-            <p className="text-xs text-slate-400 font-mono tracking-widest">DTN AERS SIMULATION</p>
+            <h1 className="text-xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">
+              ResQMesh
+            </h1>
+            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400 font-bold">DTN Protocol Simulator v1.0</div>
           </div>
         </div>
         
         <div className="flex gap-4">
+          <button 
+            onClick={() => setShowScenarios(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-cyan-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-cyan-500/30 hover:border-cyan-400 transition-all duration-300"
+          >
+            <FlaskConical className="w-4 h-4" />
+            TEST SCENARIOS
+          </button>
+          
           <button 
             onClick={() => {
               if (window.confirm("Are you sure you want to completely wipe the simulation state and restart?")) {
@@ -118,6 +129,52 @@ function App() {
           </button>
         </div>
       </header>
+
+      {/* Scenarios Modal */}
+      {showScenarios && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center pointer-events-auto p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col relative z-[101]">
+            <div className="flex justify-between items-center p-5 border-b border-white/5 bg-white/5">
+              <div className="flex items-center gap-3">
+                <FlaskConical className="w-5 h-5 text-cyan-400" />
+                <h2 className="font-bold tracking-widest text-white">AUTOMATED TEST SCENARIOS</h2>
+              </div>
+              <button onClick={() => setShowScenarios(false)} className="text-slate-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-950/50">
+              
+              {/* BLACKOUT */}
+              <div className="bg-slate-900 border border-white/5 rounded-xl p-5 hover:border-cyan-500/50 transition-colors flex flex-col">
+                <h3 className="font-bold text-rose-400 mb-2">1. Infrastructure Blackout</h3>
+                <p className="text-xs text-slate-400 mb-5 flex-1">Complete Cellular/WAN failure. Watch the protocol actively bounce an SOS purely over ad-hoc Bluetooth and Wi-Fi mesh relays.</p>
+                <button onClick={() => { useSimulationStore.getState().loadScenario('BLACKOUT'); setShowScenarios(false); }} className="w-full py-2.5 bg-white/5 hover:bg-cyan-500/20 text-cyan-400 text-xs font-bold tracking-wider rounded-lg border border-white/10 hover:border-cyan-500/50 transition-all">EXECUTE</button>
+              </div>
+              
+              {/* ROUTING */}
+              <div className="bg-slate-900 border border-white/5 rounded-xl p-5 hover:border-cyan-500/50 transition-colors flex flex-col">
+                <h3 className="font-bold text-emerald-400 mb-2">2. Adaptive Routing Race</h3>
+                <p className="text-xs text-slate-400 mb-5 flex-1">Observe the AERS algorithm actively evaluate battery levels and vector progress to select the optimal relay candidate dynamically.</p>
+                <button onClick={() => { useSimulationStore.getState().loadScenario('ADAPTIVE_ROUTING'); setShowScenarios(false); }} className="w-full py-2.5 bg-white/5 hover:bg-cyan-500/20 text-cyan-400 text-xs font-bold tracking-wider rounded-lg border border-white/10 hover:border-cyan-500/50 transition-all">EXECUTE</button>
+              </div>
+
+              {/* STORE & CARRY */}
+              <div className="bg-slate-900 border border-white/5 rounded-xl p-5 hover:border-cyan-500/50 transition-colors flex flex-col">
+                <h3 className="font-bold text-amber-400 mb-2">3. Store, Carry & Forward</h3>
+                <p className="text-xs text-slate-400 mb-5 flex-1">A lone fast-moving node receives the distress signal, physically carries it across an empty map, and forwards it when back in range.</p>
+                <button onClick={() => { useSimulationStore.getState().loadScenario('STORE_CARRY'); setShowScenarios(false); }} className="w-full py-2.5 bg-white/5 hover:bg-cyan-500/20 text-cyan-400 text-xs font-bold tracking-wider rounded-lg border border-white/10 hover:border-cyan-500/50 transition-all">EXECUTE</button>
+              </div>
+
+              {/* GATEWAY */}
+              <div className="bg-slate-900 border border-white/5 rounded-xl p-5 hover:border-cyan-500/50 transition-colors flex flex-col">
+                <h3 className="font-bold text-blue-400 mb-2">4. Cellular Gateway Lifeline</h3>
+                <p className="text-xs text-slate-400 mb-5 flex-1">An SOS packet traverses the mesh until it hits a node with active internet connectivity, instantly beaming via cellular backhaul to the Authority.</p>
+                <button onClick={() => { useSimulationStore.getState().loadScenario('GATEWAY'); setShowScenarios(false); }} className="w-full py-2.5 bg-white/5 hover:bg-cyan-500/20 text-cyan-400 text-xs font-bold tracking-wider rounded-lg border border-white/10 hover:border-cyan-500/50 transition-all">EXECUTE</button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
       
       <main className="flex-1 flex p-6 gap-6 overflow-hidden z-10">
         

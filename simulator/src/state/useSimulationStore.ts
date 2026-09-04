@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { SimulatedNode, EmergencyBundle, NodeType, TransportType, LogEntry } from '../types';
+import { SimulatedNode, NodeType, TransportType, LogEntry, EmergencyBundle, Priority, EmergencyType, Severity, BundleState } from '../types';
 import { SimulationEngine } from '../simulation/engine/SimulationEngine';
 import { runRoutingCycle } from '../protocol/dtn/routing';
 
@@ -9,6 +9,7 @@ interface SimulationState {
   bundles: Record<string, EmergencyBundle>;
   logs: LogEntry[];
   time: number;
+  lastRoutingCycle: number;
   isPlaying: boolean;
   selectedNodeId: string | null;
   globalSpeedMultiplier: number;
@@ -24,6 +25,7 @@ interface SimulationState {
   setGlobalSpeedMultiplier: (speed: number) => void;
   setGlobalInfrastructure: (type: 'SMS' | 'WAN', enabled: boolean) => void;
   resetSimulation: () => void;
+  loadScenario: (scenarioId: string) => void;
   
   // Simulation Loop Updates
   tick: (deltaMs: number) => void;
@@ -53,13 +55,12 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     engine,
     nodes: [],
     bundles: {},
+    logs: [],
     time: 0,
+    lastRoutingCycle: 0,
     isPlaying: false,
     selectedNodeId: null,
     globalSpeedMultiplier: 1.0,
-
-    // ...
-    logs: [],
     
     addNode: (node) => set((state) => ({ nodes: [...state.nodes, node] })),
     
@@ -127,8 +128,97 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         bundles: {},
         logs: [{ id: 'init', time: Date.now(), msg: '[SYS] Simulation manually reset and re-initialized.' }],
         time: 0,
+        lastRoutingCycle: 0,
         isPlaying: false,
         selectedNodeId: null
+      });
+    },
+
+    loadScenario: (scenarioId: string) => {
+      const baseNode = (id: string, x: number, y: number): SimulatedNode => ({
+        id, type: NodeType.RELAY, position: { x, y }, velocity: { x: 0, y: 0 },
+        battery: 100, communicationRange: 150, transports: [TransportType.BLE, TransportType.WIFI_DIRECT],
+        hasInternet: false, isGateway: false, isAuthority: false, isActive: true,
+        bundleStore: [], deliveryHistory: [], contactHistory: [],
+        metrics: { bundlesCreated: 0, bundlesRelayed: 0, bundlesDelivered: 0, bundlesDropped: 0, totalBytesTransferred: 0, energyConsumed: 0 },
+        lastActivity: 0
+      });
+
+      let scenarioNodes: SimulatedNode[] = [];
+      
+      const auth = baseNode('AUTH', 1050, 350);
+      auth.isAuthority = true;
+      auth.hasInternet = true; // authorities typically have WAN
+
+      const bundleId = `SOS-${Date.now().toString().slice(-4)}`;
+      const bundle: EmergencyBundle = {
+        bundleId, originNodeId: 'VIC1', destinationType: 'AUTHORITY', priority: Priority.CRITICAL,
+        emergencyType: EmergencyType.MEDICAL, severity: Severity.CRITICAL, createdAt: Date.now(),
+        ttl: 3600000, expiresAt: Date.now() + 3600000, payload: { victimId: 'VIC1', location: { x: 150, y: 350 }, timestamp: Date.now() },
+        hopCount: 0, replicationCount: 0, state: BundleState.PERSISTED, currentNodeId: 'VIC1'
+      };
+
+      if (scenarioId === 'BLACKOUT') {
+        // Complete Cellular/WAN Failure
+        const v = baseNode('VIC1', 150, 350);
+        v.bundleStore.push(bundleId);
+        
+        scenarioNodes = [
+          v, auth,
+          baseNode('R1', 350, 350),
+          baseNode('R2', 550, 300),
+          baseNode('R3', 750, 400),
+          baseNode('R4', 900, 350)
+        ];
+        
+        // Ensure absolutely NO WAN/SMS exists
+        scenarioNodes = scenarioNodes.map(n => ({
+           ...n, 
+           hasInternet: n.isAuthority ? true : false,
+           transports: [TransportType.BLE, TransportType.WIFI_DIRECT] // strictly local
+        }));
+
+      } else if (scenarioId === 'ADAPTIVE_ROUTING') {
+        const v = baseNode('VIC1', 200, 350);
+        v.bundleStore.push(bundleId);
+
+        const rDead = baseNode('R_DYING', 350, 200);
+        rDead.battery = 5; // almost dead, algorithm should reject
+
+        const rLost = baseNode('R_LOST', 100, 100);
+        rLost.battery = 100; // full battery but wrong direction
+
+        const rPrime = baseNode('R_PRIME', 380, 380);
+        rPrime.battery = 90; // good battery, good path
+
+        scenarioNodes = [v, auth, rDead, rLost, rPrime, baseNode('R_NEXT', 550, 350), baseNode('R_LATE', 750, 350)];
+      } else if (scenarioId === 'STORE_CARRY') {
+        const v = baseNode('VIC1', 150, 350);
+        v.bundleStore.push(bundleId);
+
+        const rMule = baseNode('R_MULE', 250, 350);
+        rMule.velocity = { x: 120, y: 0 }; // Moving very fast towards authority!
+
+        scenarioNodes = [v, auth, rMule];
+      } else if (scenarioId === 'GATEWAY') {
+        const v = baseNode('VIC1', 150, 350);
+        v.bundleStore.push(bundleId);
+
+        const gw = baseNode('GW1', 550, 350);
+        gw.hasInternet = true;
+        
+        scenarioNodes = [v, auth, baseNode('R1', 350, 350), gw];
+      }
+
+      set({
+        nodes: scenarioNodes,
+        bundles: { [bundleId]: bundle },
+        logs: [{ id: 'scen', time: Date.now(), msg: `[TEST] Automatically loaded scenario: ${scenarioId}` }],
+        time: 0,
+        lastRoutingCycle: 0,
+        isPlaying: true, // Auto-play
+        selectedNodeId: null,
+        globalSpeedMultiplier: 0.5 // Start slow for observation
       });
     },
 
@@ -197,17 +287,22 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
         const newTime = state.time + deltaMs;
 
-        // 2. AERS Routing Decision Cycle
         let finalNodes = [...updatedNodes];
         let newLogs = [...state.logs];
         
-        // Execute routing cycle
-        const { transfers } = runRoutingCycle(finalNodes, state.bundles);
-        
-        // Apply standard mesh transfers instantly for simulation UI simplicity
-        if (transfers.length > 0) {
-          transfers.forEach(transfer => {
-            newLogs.unshift({
+        // Rate-limit routing for observability
+        const routingInterval = 1000 / Math.max(0.1, state.globalSpeedMultiplier);
+        let updatedLastRoutingCycle = state.lastRoutingCycle;
+
+        if (Date.now() - state.lastRoutingCycle >= routingInterval) {
+          updatedLastRoutingCycle = Date.now();
+          
+          // 2. AERS Routing Decision Cycle
+          const { transfers } = runRoutingCycle(finalNodes, state.bundles);
+          
+          if (transfers.length > 0) {
+            transfers.forEach(transfer => {
+              newLogs.unshift({
               id: Math.random().toString(),
               time: Date.now(),
               msg: `[AERS] Transferred ${transfer.bundleId.slice(-4)} from ${transfer.from} to ${transfer.to}`
@@ -285,9 +380,12 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           }
         }
 
+        } // End of gated interval
+
         return {
           nodes: finalNodes,
           time: newTime,
+          lastRoutingCycle: updatedLastRoutingCycle,
           logs: newLogs.slice(0, 50)
         };
       });
