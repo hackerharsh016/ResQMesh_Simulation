@@ -146,18 +146,31 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         const updatedNodes = state.nodes.map(node => {
           let updated = { ...node };
 
-          // Dynamic Activity: If BLE is disabled, node is inactive
-          updated.isActive = updated.transports.includes(TransportType.BLE);
-
           // Dynamic Role Assignment
           if (updated.isAuthority) {
             updated.type = NodeType.AUTHORITY;
           } else if (updated.hasInternet) {
             updated.type = NodeType.GATEWAY;
           } else {
-            // Check if it originated any SOS
             const originatedSOS = Object.values(state.bundles).some(b => b.originNodeId === updated.id);
             updated.type = originatedSOS ? NodeType.VICTIM : NodeType.RELAY;
+          }
+
+          // Dynamic Activity Check: Battery drain bounds
+          if (updated.battery <= 0) {
+            updated.isActive = false;
+            updated.transports = []; // dead node
+          } else {
+            updated.isActive = updated.transports.includes(TransportType.BLE);
+          }
+
+          // Dynamic Range Assignment based on transports
+          if (updated.transports.includes(TransportType.WIFI_DIRECT)) {
+             updated.communicationRange = 250; // High range
+          } else if (updated.transports.includes(TransportType.BLE)) {
+             updated.communicationRange = 100; // Minimum range for BLE only
+          } else {
+             updated.communicationRange = 0; // Offline
           }
 
           if (updated.velocity.x === 0 && updated.velocity.y === 0) return updated;
@@ -202,10 +215,23 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
             finalNodes = finalNodes.map(n => {
               if (n.id === transfer.to) {
-                return { ...n, bundleStore: [...n.bundleStore, transfer.bundleId], lastActivity: Date.now() };
+                // Receiver pays 1 power
+                return { 
+                  ...n, 
+                  bundleStore: [...n.bundleStore, transfer.bundleId], 
+                  lastActivity: Date.now(),
+                  battery: Math.max(0, n.battery - 1),
+                  metrics: { ...n.metrics, energyConsumed: n.metrics.energyConsumed + 1 }
+                };
               }
               if (n.id === transfer.from) {
-                return { ...n, lastActivity: Date.now() };
+                // Transmitter pays 2 power
+                return { 
+                  ...n, 
+                  lastActivity: Date.now(),
+                  battery: Math.max(0, n.battery - 2),
+                  metrics: { ...n.metrics, energyConsumed: n.metrics.energyConsumed + 2 }
+                };
               }
               return n;
             });
@@ -237,7 +263,15 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
                      msg: `[BACKHAUL] ${node.hasInternet ? 'WAN' : 'SMS'} uplink: ${bId.slice(-4)} from ${node.id} to Authority`
                    });
                 });
-                return { ...node, lastActivity: Date.now() };
+                
+                // Backhaul egress pays 3 power per bundle
+                const cost = unsentBundles.length * 3;
+                return { 
+                  ...node, 
+                  lastActivity: Date.now(),
+                  battery: Math.max(0, node.battery - cost),
+                  metrics: { ...node.metrics, energyConsumed: node.metrics.energyConsumed + cost }
+                };
               }
             }
             return node;

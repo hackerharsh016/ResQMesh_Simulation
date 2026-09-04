@@ -120,6 +120,22 @@ export const NetworkCanvas: React.FC = () => {
         ctx.strokeStyle = 'rgba(244, 63, 94, 0.8)';
         ctx.lineWidth = 2;
         ctx.stroke();
+
+        // Draw a small queue count badge (top right of node)
+        ctx.beginPath();
+        ctx.arc(node.position.x + 12, node.position.y - 12, 7, 0, Math.PI * 2);
+        ctx.fillStyle = '#f43f5e'; // rose-500
+        ctx.fill();
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(node.bundleStore.length.toString(), node.position.x + 12, node.position.y - 11);
+        
+        // Reset text alignment for node IDs
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
       }
       
       // Draw range circle (faint)

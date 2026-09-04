@@ -67,9 +67,11 @@ function App() {
 
     updateNode(victim.id, {
       bundleStore: [...victim.bundleStore, bundle.bundleId],
+      battery: Math.max(0, victim.battery - 5), // Creating bundle costs 5 power
       metrics: {
         ...victim.metrics,
-        bundlesCreated: victim.metrics.bundlesCreated + 1
+        bundlesCreated: victim.metrics.bundlesCreated + 1,
+        energyConsumed: victim.metrics.energyConsumed + 5
       }
     });
 
