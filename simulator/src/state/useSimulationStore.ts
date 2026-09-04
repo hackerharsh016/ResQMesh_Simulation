@@ -22,6 +22,7 @@ interface SimulationState {
   togglePlay: () => void;
   setSelectedNode: (id: string | null) => void;
   setGlobalSpeedMultiplier: (speed: number) => void;
+  resetSimulation: () => void;
   
   // Simulation Loop Updates
   tick: (deltaMs: number) => void;
@@ -84,6 +85,35 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     setSelectedNode: (id) => set({ selectedNodeId: id }),
     
     setGlobalSpeedMultiplier: (speed) => set({ globalSpeedMultiplier: speed }),
+
+    resetSimulation: () => {
+      const createNode = (id: string, x: number, y: number, isStatic = false, hasInternet = false, isAuthority = false): SimulatedNode => ({
+        id, type: NodeType.RELAY, position: { x, y }, 
+        velocity: isStatic ? { x: 0, y: 0 } : { x: (Math.random() - 0.5) * 50, y: (Math.random() - 0.5) * 50 },
+        battery: 100, communicationRange: 150,
+        transports: [TransportType.BLE, TransportType.WIFI_DIRECT],
+        hasInternet, isGateway: hasInternet, isAuthority,
+        isActive: true, bundleStore: [], deliveryHistory: [], contactHistory: [],
+        metrics: { bundlesCreated: 0, bundlesRelayed: 0, bundlesDelivered: 0, bundlesDropped: 0, totalBytesTransferred: 0, energyConsumed: 0 },
+        lastActivity: 0
+      });
+
+      const initialNodes: SimulatedNode[] = [];
+      for(let i=1; i<=8; i++) {
+        initialNodes.push(createNode(`N${i}`, 150 + Math.random()*400, 100 + Math.random()*500));
+      }
+      initialNodes.push(createNode('G1', 850, 300, true, true, false));
+      initialNodes.push(createNode('A1', 1050, 300, true, true, true));
+
+      set({
+        nodes: initialNodes,
+        bundles: {},
+        logs: [{ id: 'init', time: Date.now(), msg: '[SYS] Simulation manually reset and re-initialized.' }],
+        time: 0,
+        isPlaying: false,
+        selectedNodeId: null
+      });
+    },
 
     togglePlay: () => {
       const { isPlaying } = get();

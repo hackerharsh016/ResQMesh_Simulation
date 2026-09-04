@@ -1,35 +1,19 @@
 import React, { useEffect } from 'react';
 import { useSimulationStore } from './state/useSimulationStore';
 import { NetworkCanvas } from './components/simulation/NetworkCanvas';
-import { NodeType, TransportType, SimulatedNode, EmergencyBundle, Priority, EmergencyType, Severity, BundleState } from './types';
-import { Play, Pause, Radio, Zap, Power, Wifi, Activity, ShieldAlert, Cpu, Bluetooth, Globe, MessageSquare } from 'lucide-react';
+import { NodeType, TransportType, EmergencyBundle, Priority, EmergencyType, Severity, BundleState } from './types';
+import { Play, Pause, Radio, Zap, Power, Wifi, Activity, ShieldAlert, Cpu, Bluetooth, Globe, MessageSquare, Database, RotateCcw } from 'lucide-react';
 function App() {
-  const { nodes, bundles, selectedNodeId, isPlaying, togglePlay, addNode, updateNode, addBundle } = useSimulationStore();
+  const { nodes, bundles, selectedNodeId, isPlaying, togglePlay, updateNode, addBundle, resetSimulation } = useSimulationStore();
   const initialized = React.useRef(false);
 
   useEffect(() => {
     // Initial Scenario Setup
     if (nodes.length === 0 && !initialized.current) {
       initialized.current = true;
-      const createNode = (id: string, x: number, y: number, isStatic = false, hasInternet = false, isAuthority = false): SimulatedNode => ({
-        id, type: NodeType.RELAY, position: { x, y }, 
-        velocity: isStatic ? { x: 0, y: 0 } : { x: (Math.random() - 0.5) * 50, y: (Math.random() - 0.5) * 50 },
-        battery: 100, communicationRange: 150,
-        transports: [TransportType.BLE, TransportType.WIFI_DIRECT],
-        hasInternet, isGateway: hasInternet, isAuthority,
-        isActive: true, bundleStore: [], deliveryHistory: [], contactHistory: [],
-        metrics: { bundlesCreated: 0, bundlesRelayed: 0, bundlesDelivered: 0, bundlesDropped: 0, totalBytesTransferred: 0, energyConsumed: 0 }
-      });
-
-      for(let i=1; i<=8; i++) {
-        addNode(createNode(`N${i}`, 150 + Math.random()*400, 100 + Math.random()*500));
-      }
-      // Give one node internet (becomes Gateway dynamically)
-      addNode(createNode('G1', 850, 300, true, true, false));
-      // One Authority
-      addNode(createNode('A1', 1050, 300, true, true, true));
+      resetSimulation();
     }
-  }, [nodes.length, addNode]);
+  }, [nodes.length, resetSimulation]);
 
   const generateSOS = (targetId: string) => {
     const victim = nodes.find(n => n.id === targetId && n.isActive);
@@ -90,6 +74,18 @@ function App() {
         
         <div className="flex gap-4">
           <button 
+            onClick={() => {
+              if (window.confirm("Are you sure you want to completely wipe the simulation state and restart?")) {
+                resetSimulation();
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-500 transition-all duration-300"
+          >
+            <RotateCcw className="w-4 h-4" />
+            RESET
+          </button>
+          
+          <button 
             onClick={togglePlay}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-white shadow-[0_0_15px_rgba(0,0,0,0.5)] transition-all duration-300 ${isPlaying ? 'bg-amber-500/80 hover:bg-amber-400 shadow-amber-500/20 border border-amber-400/50' : 'bg-emerald-500/80 hover:bg-emerald-400 shadow-emerald-500/20 border border-emerald-400/50'}`}
           >
@@ -129,7 +125,7 @@ function App() {
               <Activity className="w-4 h-4 text-emerald-400" />
               <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">System Terminal</span>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-1.5 flex flex-col-reverse">
+            <div className="flex-1 overflow-y-auto p-3 space-y-1.5 flex flex-col-reverse custom-scrollbar">
               {useSimulationStore((state) => state.logs).map((log) => (
                 <div key={log.id} className="text-[11px] font-mono leading-tight">
                   <span className="text-slate-500">[{new Date(log.time).toISOString().substring(11, 23)}]</span>{' '}
@@ -141,7 +137,7 @@ function App() {
         </div>
         
         {/* Sidebar Controls */}
-        <aside className="w-80 backdrop-blur-xl bg-slate-900/40 border border-white/10 rounded-2xl p-5 flex flex-col gap-6 overflow-y-auto shadow-2xl relative">
+        <aside className="w-80 backdrop-blur-xl bg-slate-900/40 border border-white/10 rounded-2xl p-5 flex flex-col gap-6 overflow-y-auto shadow-2xl relative custom-scrollbar">
 
           <div className="space-y-4">
             <h2 className="text-xs font-bold tracking-widest text-slate-500 uppercase">Global Speed Control</h2>
@@ -275,6 +271,39 @@ function App() {
                       >
                         <Globe className="w-3.5 h-3.5" /> WAN
                       </button>
+                    </div>
+                  </div>
+
+                  <hr className="border-white/5" />
+
+                  {/* Local SQLite Storage */}
+                  <div className="pt-1">
+                    <h3 className="text-[10px] font-bold tracking-widest text-slate-500 uppercase mb-2 flex items-center gap-1.5">
+                      <Database className="w-3 h-3" />
+                      Local SQLite Storage
+                    </h3>
+                    <div className="bg-slate-950/50 rounded-lg border border-white/5 p-2 max-h-32 overflow-y-auto space-y-1.5 custom-scrollbar">
+                      {node.bundleStore.length === 0 ? (
+                        <div className="text-xs text-slate-600 text-center py-2 font-mono">0 RECORDS</div>
+                      ) : (
+                        node.bundleStore.map(id => {
+                          const b = bundles[id];
+                          if (!b) return null;
+                          const sizeKb = (JSON.stringify(b).length / 1024).toFixed(1);
+                          return (
+                            <div key={id} className="bg-white/5 rounded p-2 text-[10px] font-mono border border-white/5 hover:border-cyan-500/30 transition-colors">
+                              <div className="flex justify-between mb-1">
+                                <span className="text-cyan-400 font-bold">{b.bundleId}</span>
+                                <span className="text-slate-500">{new Date(b.createdAt).toISOString().substring(11, 19)}</span>
+                              </div>
+                              <div className="flex justify-between text-slate-400">
+                                <span>SRC: {b.originNodeId}</span>
+                                <span>{sizeKb} KB</span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
 
